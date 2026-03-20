@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>HCMC Navigator</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg: #0e0f13;
+      --panel: #16181f;
+      --border: #2a2d3a;
+      --accent: #e8c84a;
+      --accent2: #4ae8a0;
+      --danger: #e84a4a;
+      --text: #e8e6df;
+      --muted: #6b6f7e;
+      --mono: 'DM Mono', monospace;
+      --serif: 'Playfair Display', serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--mono);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* TOP BAR */
+    #topbar {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.75rem 1.2rem;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      z-index: 1000;
+      flex-shrink: 0;
+    }
+
+    #topbar h1 {
+      font-family: var(--serif);
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--accent);
+      white-space: nowrap;
+      letter-spacing: 0.01em;
+    }
+
+    .input-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex: 1;
+    }
+
+    .dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot.origin { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); }
+    .dot.dest   { background: var(--danger);  box-shadow: 0 0 6px var(--danger); }
+
+    .loc-input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.5rem 0.75rem;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      outline: none;
+      transition: border-color 0.2s;
+      min-width: 0;
+    }
+    .loc-input::placeholder { color: var(--muted); }
+    .loc-input:focus { border-color: var(--accent); }
+
+    .suggestions {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0; right: 0;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      z-index: 9999;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .suggestion-item {
+      padding: 0.55rem 0.85rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .suggestion-item:last-child { border-bottom: none; }
+    .suggestion-item:hover { background: rgba(232,200,74,0.08); color: var(--accent); }
+
+    .input-wrap { position: relative; flex: 1; min-width: 0; }
+
+    .swap-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 0.4rem 0.6rem;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    .swap-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+    #go-btn {
+      background: var(--accent);
+      color: #0e0f13;
+      border: none;
+      border-radius: 8px;
+      padding: 0.5rem 1.1rem;
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: all 0.2s;
+    }
+    #go-btn:hover { background: #f0d76a; }
+    #go-btn:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+
+    /* MAIN LAYOUT */
+    #main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* SIDEBAR */
+    #sidebar {
+      width: 300px;
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    #sidebar-header {
+      padding: 0.9rem 1rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    #route-summary {
+      padding: 0.9rem 1rem;
+      border-bottom: 1px solid var(--border);
+      display: none;
+    }
+
+    #route-summary .stat {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 0.3rem;
+    }
+
+    #route-summary .label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    #route-summary .value { font-size: 1.1rem; color: var(--accent); font-weight: 500; }
+
+    #steps-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.5rem 0;
+    }
+
+    .step-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.7rem;
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid rgba(42,45,58,0.5);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .step-item:hover { background: rgba(232,200,74,0.05); }
+    .step-item.active { background: rgba(232,200,74,0.1); border-left: 2px solid var(--accent); }
+
+    .step-num {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: var(--border);
+      color: var(--muted);
+      font-size: 0.65rem;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .step-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+
+    .step-text {
+      flex: 1;
+      font-size: 0.78rem;
+      line-height: 1.45;
+      color: var(--text);
+    }
+    .step-dist { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+
+    #empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 0.8rem;
+      gap: 0.5rem;
+      padding: 2rem;
+      text-align: center;
+    }
+    #empty-state .big { font-size: 2.5rem; }
+
+    /* MAP */
+    #map {
+      flex: 1;
+      z-index: 1;
+    }
+
+    /* Leaflet custom styles */
+    .leaflet-container { background: #1a1c24 !important; }
+
+    /* Loading */
+    #loading {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.5rem;
+      z-index: 9999;
+      display: none;
+      font-size: 0.82rem;
+      color: var(--accent);
+      align-items: center;
+      gap: 0.6rem;
+    }
+    #loading.show { display: flex; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    /* Error toast */
+    #toast {
+      position: absolute;
+      bottom: 1.5rem; left: 50%;
+      transform: translateX(-50%);
+      background: var(--danger);
+      color: #fff;
+      padding: 0.6rem 1.2rem;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      z-index: 9999;
+      display: none;
+      white-space: nowrap;
+    }
+
+    /* Custom marker */
+    .custom-marker {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+    }
+
+    #steps-list::-webkit-scrollbar { width: 4px; }
+    #steps-list::-webkit-scrollbar-track { background: transparent; }
+    #steps-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <h1>HCMC Navigator</h1>
+
+  <div class="input-group">
+    <span class="dot origin"></span>
+    <div class="input-wrap">
+      <input id="origin-input" class="loc-input" placeholder="Start — search or click map" autocomplete="off"/>
+      <div class="suggestions" id="origin-suggestions" style="display:none"></div>
+    </div>
+
+    <button class="swap-btn" onclick="swapLocations()" title="Swap">⇅</button>
+
+    <span class="dot dest"></span>
+    <div class="input-wrap">
+      <input id="dest-input" class="loc-input" placeholder="Destination — search or click map" autocomplete="off"/>
+      <div class="suggestions" id="dest-suggestions" style="display:none"></div>
+    </div>
+
+    <button id="go-btn" onclick="getDirections()">Route →</button>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+  <div id="sidebar">
+    <div id="sidebar-header">Turn-by-turn directions</div>
+    <div id="route-summary">
+      <div class="stat">
+        <span class="label">Distance</span>
+        <span class="value" id="total-dist">—</span>
+      </div>
+      <div class="stat">
+        <span class="label">Est. time</span>
+        <span class="value" id="total-time">—</span>
+      </div>
+    </div>
+    <div id="steps-list">
+      <div id="empty-state">
+        <div class="big">🗺️</div>
+        <div>Search locations above<br/>or click the map to set points</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="map"></div>
+</div>
+
+<div id="loading"><div class="spinner"></div> Finding route…</div>
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+  // ── HCMC bounds ──────────────────────────────────────────────
+  const CITY_CENTER = [10.7769, 106.7009];
+  const CITY_BOUNDS = L.latLngBounds([10.35, 106.35], [11.15, 107.05]);
+
+  // ── MAP ──────────────────────────────────────────────────────
+  const map = L.map('map', {
+    center: CITY_CENTER,
+    zoom: 13,
+    maxBounds: CITY_BOUNDS,
+    maxBoundsViscosity: 0.85,
+    zoomControl: true,
+  });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 19,
+  }).addTo(map);
+
+  // ── STATE ────────────────────────────────────────────────────
+  let originLatLng = null, destLatLng = null;
+  let originMarker = null, destMarker = null;
+  let routeLayer = null;
+  let clickMode = null; // 'origin' | 'dest' | null
+  let activeStep = -1;
+  let stepMarkers = [];
+
+  // ── MARKERS ──────────────────────────────────────────────────
+  function makeIcon(color) {
+    return L.divIcon({
+      className: '',
+      html: `<div class="custom-marker" style="background:${color}"></div>`,
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+    });
+  }
+
+  function setOriginMarker(latlng) {
+    if (originMarker) map.removeLayer(originMarker);
+    originMarker = L.marker(latlng, { icon: makeIcon('#4ae8a0'), draggable: true }).addTo(map);
+    originMarker.on('dragend', e => {
+      originLatLng = e.target.getLatLng();
+      reverseGeocode(originLatLng, 'origin-input');
+      if (destLatLng) getDirections();
+    });
+    originLatLng = latlng;
+  }
+
+  function setDestMarker(latlng) {
+    if (destMarker) map.removeLayer(destMarker);
+    destMarker = L.marker(latlng, { icon: makeIcon('#e84a4a'), draggable: true }).addTo(map);
+    destMarker.on('dragend', e => {
+      destLatLng = e.target.getLatLng();
+      reverseGeocode(destLatLng, 'dest-input');
+      if (originLatLng) getDirections();
+    });
+    destLatLng = latlng;
+  }
+
+  // ── MAP CLICK ────────────────────────────────────────────────
+  map.on('click', e => {
+    if (!originLatLng) {
+      setOriginMarker(e.latlng);
+      reverseGeocode(e.latlng, 'origin-input');
+    } else if (!destLatLng) {
+      setDestMarker(e.latlng);
+      reverseGeocode(e.latlng, 'dest-input');
+      getDirections();
+    } else {
+      // Reset and start fresh
+      setOriginMarker(e.latlng);
+      reverseGeocode(e.latlng, 'origin-input');
+      clearDest();
+    }
+  });
+
+  function clearDest() {
+    if (destMarker) { map.removeLayer(destMarker); destMarker = null; }
+    destLatLng = null;
+    document.getElementById('dest-input').value = '';
+    clearRoute();
+  }
+
+  // ── GEOCODING (Nominatim, biased to HCMC) ───────────────────
+  let searchTimers = {};
+
+  function setupSearch(inputId, suggestionsId, isOrigin) {
+    const input = document.getElementById(inputId);
+    const box   = document.getElementById(suggestionsId);
+
+    input.addEventListener('input', () => {
+      clearTimeout(searchTimers[inputId]);
+      const q = input.value.trim();
+      if (q.length < 3) { box.style.display = 'none'; return; }
+      searchTimers[inputId] = setTimeout(() => geocodeSearch(q, box, isOrigin), 350);
+    });
+
+    input.addEventListener('blur', () => setTimeout(() => box.style.display = 'none', 200));
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { box.style.display = 'none'; if (isOrigin && destLatLng) getDirections(); else if (!isOrigin && originLatLng) getDirections(); }});
+  }
+
+  async function geocodeSearch(query, box, isOrigin) {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + ', Ho Chi Minh City')}&limit=5&countrycodes=vn&viewbox=106.35,11.15,107.05,10.35&bounded=1`;
+    try {
+      const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+      const data = await res.json();
+      if (!data.length) { box.style.display = 'none'; return; }
+      box.innerHTML = '';
+      data.forEach(place => {
+        const item = document.createElement('div');
+        item.className = 'suggestion-item';
+        item.textContent = place.display_name;
+        item.onclick = () => {
+          const latlng = L.latLng(parseFloat(place.lat), parseFloat(place.lon));
+          if (isOrigin) {
+            setOriginMarker(latlng);
+            document.getElementById('origin-input').value = place.display_name.split(',')[0];
+          } else {
+            setDestMarker(latlng);
+            document.getElementById('dest-input').value = place.display_name.split(',')[0];
+          }
+          box.style.display = 'none';
+          if (originLatLng && destLatLng) getDirections();
+        };
+        box.appendChild(item);
+      });
+      box.style.display = 'block';
+    } catch(e) {}
+  }
+
+  async function reverseGeocode(latlng, inputId) {
+    try {
+      const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}`;
+      const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+      const data = await res.json();
+      if (data.display_name) {
+        const short = data.address?.road || data.address?.suburb || data.display_name.split(',')[0];
+        document.getElementById(inputId).value = short;
+      }
+    } catch(e) {}
+  }
+
+  setupSearch('origin-input', 'origin-suggestions', true);
+  setupSearch('dest-input',   'dest-suggestions',   false);
+
+  // ── SWAP ─────────────────────────────────────────────────────
+  function swapLocations() {
+    const oi = document.getElementById('origin-input');
+    const di = document.getElementById('dest-input');
+    [oi.value, di.value] = [di.value, oi.value];
+    [originLatLng, destLatLng] = [destLatLng, originLatLng];
+    if (originLatLng) setOriginMarker(originLatLng);
+    if (destLatLng)   setDestMarker(destLatLng);
+    if (originLatLng && destLatLng) getDirections();
+  }
+
+  // ── ROUTING (OSRM public API) ─────────────────────────────────
+  async function getDirections() {
+    if (!originLatLng || !destLatLng) { showToast('Set both a start and destination first.'); return; }
+    showLoading(true);
+    clearRoute();
+
+    const url = `https://router.project-osrm.org/route/v1/driving/${originLatLng.lng},${originLatLng.lat};${destLatLng.lng},${destLatLng.lat}?overview=full&geometries=geojson&steps=true&annotations=false`;
+
+    try {
+      const res  = await fetch(url);
+      const data = await res.json();
+      if (data.code !== 'Ok' || !data.routes.length) { showToast('No route found between these points.'); showLoading(false); return; }
+
+      const route = data.routes[0];
+      drawRoute(route.geometry.coordinates);
+      renderSteps(route.legs[0].steps, route.distance, route.duration);
+      map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
+    } catch(e) {
+      showToast('Could not fetch route. Check your connection.');
+    }
+    showLoading(false);
+  }
+
+  function drawRoute(coords) {
+    const latlngs = coords.map(c => [c[1], c[0]]);
+    routeLayer = L.polyline(latlngs, {
+      color: '#e8c84a',
+      weight: 5,
+      opacity: 0.9,
+      lineJoin: 'round',
+      lineCap: 'round',
+    }).addTo(map);
+  }
+
+  function clearRoute() {
+    if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+    stepMarkers.forEach(m => map.removeLayer(m));
+    stepMarkers = [];
+    document.getElementById('steps-list').innerHTML = '<div id="empty-state"><div class="big">🗺️</div><div>Search locations above<br/>or click the map to set points</div></div>';
+    document.getElementById('route-summary').style.display = 'none';
+    activeStep = -1;
+  }
+
+  // ── STEP ICONS ───────────────────────────────────────────────
+  function maneuverIcon(m) {
+    if (!m) return '➡️';
+    const t = (m.type || '') + '_' + (m.modifier || '');
+    const map_ = {
+      'turn_left': '↰', 'turn_slight left': '↖', 'turn_sharp left': '⬅',
+      'turn_right': '↱', 'turn_slight right': '↗', 'turn_sharp right': '➡',
+      'turn_straight': '⬆', 'new name_straight': '⬆', 'continue_straight': '⬆',
+      'merge_': '🔀', 'fork_left': '↙', 'fork_right': '↘',
+      'roundabout_': '🔄', 'rotary_': '🔄',
+      'arrive_': '📍', 'depart_': '🟢',
+    };
+    return map_[t] || map_[m.type + '_'] || '➡️';
+  }
+
+  function formatDist(m) {
+    return m >= 1000 ? (m/1000).toFixed(1) + ' km' : Math.round(m) + ' m';
+  }
+  function formatTime(s) {
+    const m = Math.round(s / 60);
+    return m < 60 ? m + ' min' : Math.floor(m/60) + 'h ' + (m%60) + 'min';
+  }
+
+  function renderSteps(steps, totalDist, totalDur) {
+    document.getElementById('total-dist').textContent = formatDist(totalDist);
+    document.getElementById('total-time').textContent = formatTime(totalDur);
+    document.getElementById('route-summary').style.display = 'block';
+
+    const list = document.getElementById('steps-list');
+    list.innerHTML = '';
+
+    steps.forEach((step, i) => {
+      const div = document.createElement('div');
+      div.className = 'step-item';
+      div.dataset.index = i;
+
+      const icon = maneuverIcon(step.maneuver);
+      const name = step.name || 'Unnamed road';
+      const instr = step.maneuver?.instruction || buildInstruction(step.maneuver, name);
+
+      div.innerHTML = `
+        <div class="step-icon">${icon}</div>
+        <div style="flex:1">
+          <div class="step-text">${instr || name}</div>
+          ${step.distance > 0 ? `<div class="step-dist">${formatDist(step.distance)}</div>` : ''}
+        </div>`;
+
+      div.onclick = () => {
+        document.querySelectorAll('.step-item').forEach(el => el.classList.remove('active'));
+        div.classList.add('active');
+        activeStep = i;
+        if (step.maneuver?.location) {
+          const [lng, lat] = step.maneuver.location;
+          map.setView([lat, lng], 16, { animate: true });
+        }
+      };
+
+      list.appendChild(div);
+
+      // Small dot marker for each step
+      if (step.maneuver?.location && i > 0 && i < steps.length - 1) {
+        const [lng, lat] = step.maneuver.location;
+        const m = L.circleMarker([lat, lng], {
+          radius: 4, color: '#e8c84a', fillColor: '#0e0f13', fillOpacity: 1, weight: 2
+        }).addTo(map);
+        m.on('click', () => div.click());
+        stepMarkers.push(m);
+      }
+    });
+  }
+
+  function buildInstruction(maneuver, name) {
+    if (!maneuver) return `Continue on ${name}`;
+    const mod = maneuver.modifier || '';
+    const type = maneuver.type || '';
+    if (type === 'depart') return `Depart from ${name}`;
+    if (type === 'arrive') return `Arrive at destination`;
+    if (type === 'turn') return `Turn ${mod} onto ${name}`;
+    if (type === 'roundabout') return `Enter roundabout, exit onto ${name}`;
+    return `Continue on ${name}`;
+  }
+
+  // ── UI HELPERS ───────────────────────────────────────────────
+  function showLoading(v) { document.getElementById('loading').classList.toggle('show', v); }
+
+  let toastTimer;
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.style.display = 'block';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.style.display = 'none', 3500);
+  }
+</script>
+</body>
+</html>
